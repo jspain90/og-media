@@ -14,10 +14,9 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Track if player is initialized
+  const appRef = useRef(null);
   const playerRef = useRef(null);
 
-  // Load video when channel is selected
   useEffect(() => {
     if (currentChannel) {
       loadNextVideo();
@@ -25,7 +24,9 @@ function App() {
   }, [currentChannel]);
 
   const loadNextVideo = async () => {
-    if (!currentChannel) return;
+    if (!currentChannel) {
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -52,14 +53,12 @@ function App() {
     setError(null);
 
     try {
-      // Mark current as played and get next video
       const nextVideo = await skipVideo(currentChannel.id, currentVideo.id);
       console.log('Next video received:', nextVideo);
       setCurrentVideo(nextVideo);
     } catch (err) {
       console.error('Failed to skip video:', err);
       setError(err.message);
-      // Try loading next video anyway
       loadNextVideo();
     } finally {
       setLoading(false);
@@ -82,102 +81,125 @@ function App() {
     }
   };
 
-  // Keyboard controls
+  const handleToggleFullscreen = async () => {
+    if (showManagement) {
+      return;
+    }
+
+    try {
+      if (!document.fullscreenElement) {
+        const target = appRef.current ?? document.documentElement;
+        if (target.requestFullscreen) {
+          await target.requestFullscreen();
+        } else if (target.webkitRequestFullscreen) {
+          target.webkitRequestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen();
+        }
+      }
+    } catch (err) {
+      console.error('Failed to toggle fullscreen:', err);
+    }
+  };
+
   useKeyboard({
     onLeft: () => !showManagement && setMenuOpen(true),
     onRight: handleSkip,
     onSpace: handleTogglePlayPause,
+    onEnter: handleToggleFullscreen,
     menuOpen: menuOpen,
   });
 
-  // Management view
-  if (showManagement) {
-    return (
-      <ManagementView
-        onClose={() => {
-          setShowManagement(false);
-          // Reload current channel if one is selected
-          if (currentChannel) {
-            loadNextVideo();
-          }
-        }}
-      />
-    );
-  }
-
   return (
-    <div className="app">
-      {/* Channel menu */}
-      <ChannelMenu
-        isOpen={menuOpen}
-        onClose={() => setMenuOpen(false)}
-        onSelectChannel={handleChannelSelect}
-        currentChannelId={currentChannel?.id}
-        onManage={() => {
-          setMenuOpen(false);
-          setShowManagement(true);
-        }}
-      />
+    <div className="app" ref={appRef}>
+      {showManagement ? (
+        <ManagementView
+          onClose={() => {
+            setShowManagement(false);
+            if (currentChannel) {
+              loadNextVideo();
+            }
+          }}
+        />
+      ) : (
+        <>
+          <ChannelMenu
+            isOpen={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            onSelectChannel={handleChannelSelect}
+            currentChannelId={currentChannel?.id}
+            onManage={() => {
+              setMenuOpen(false);
+              setShowManagement(true);
+            }}
+          />
 
-      {/* Main player view */}
-      <div className="player-view">
-        {loading && !currentVideo && (
-          <div className="loading-overlay">
-            <div className="spinner"></div>
-            <p>Loading video...</p>
-          </div>
-        )}
-
-        {error && (
-          <div className="error-overlay">
-            <div className="error-message">
-              <h3>Error</h3>
-              <p>{error}</p>
-              <button onClick={loadNextVideo} className="primary">
-                Try Again
-              </button>
-            </div>
-          </div>
-        )}
-
-        {!currentChannel && !loading && (
-          <div className="welcome-screen">
-            <h1>Welcome to OG Media</h1>
-            <p>Your lean-back YouTube channel player</p>
-            <div className="welcome-actions">
-              <button onClick={() => setMenuOpen(true)} className="primary">
-                Select Channel
-              </button>
-              <button onClick={() => setShowManagement(true)}>
-                Manage Channels
-              </button>
-            </div>
-            <div className="keyboard-hints">
-              <div className="hint">
-                <kbd>←</kbd> <span>Open menu</span>
+          <div className="player-view">
+            {loading && !currentVideo && (
+              <div className="loading-overlay">
+                <div className="spinner"></div>
+                <p>Loading video...</p>
               </div>
-              <div className="hint">
-                <kbd>→</kbd> <span>Skip video</span>
+            )}
+
+            {error && (
+              <div className="error-overlay">
+                <div className="error-message">
+                  <h3>Error</h3>
+                  <p>{error}</p>
+                  <button onClick={loadNextVideo} className="primary">
+                    Try Again
+                  </button>
+                </div>
               </div>
-              <div className="hint">
-                <kbd>Space</kbd> <span>Play/Pause</span>
+            )}
+
+            {!currentChannel && !loading && (
+              <div className="welcome-screen">
+                <h1>Welcome to OG Media</h1>
+                <p>Your lean-back YouTube channel player</p>
+                <div className="welcome-actions">
+                  <button onClick={() => setMenuOpen(true)} className="primary">
+                    Select Channel
+                  </button>
+                  <button onClick={() => setShowManagement(true)}>
+                    Manage Channels
+                  </button>
+                </div>
+                <div className="keyboard-hints">
+                  <div className="hint">
+                    <kbd>Left Arrow</kbd> <span>Open menu</span>
+                  </div>
+                  <div className="hint">
+                    <kbd>Right Arrow</kbd> <span>Skip video</span>
+                  </div>
+                  <div className="hint">
+                    <kbd>Space</kbd> <span>Play/Pause</span>
+                  </div>
+                  <div className="hint">
+                    <kbd>Enter</kbd> <span>Toggle fullscreen</span>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
+
+            {currentChannel && !error && (
+              <>
+                <Player video={currentVideo} onVideoEnd={handleVideoEnd} ref={playerRef} />
+
+                <div className="channel-indicator">
+                  <span className="channel-label">Channel:</span>
+                  <span className="channel-value">{currentChannel.name}</span>
+                </div>
+              </>
+            )}
           </div>
-        )}
-
-        {currentChannel && !error && (
-          <>
-            <Player video={currentVideo} onVideoEnd={handleVideoEnd} ref={playerRef} />
-
-            {/* Channel indicator */}
-            <div className="channel-indicator">
-              <span className="channel-label">Channel:</span>
-              <span className="channel-value">{currentChannel.name}</span>
-            </div>
-          </>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 }

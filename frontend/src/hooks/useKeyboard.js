@@ -7,9 +7,10 @@ import { useEffect } from 'react';
  * @param {Function} handlers.onLeft - Called when Left arrow is pressed (open menu)
  * @param {Function} handlers.onRight - Called when Right arrow is pressed (skip)
  * @param {Function} handlers.onSpace - Called when Space is pressed (play/pause)
+ * @param {Function} handlers.onEnter - Called when Enter is pressed (fullscreen)
  * @param {boolean} handlers.menuOpen - Whether the menu is currently open
  */
-export function useKeyboard({ onLeft, onRight, onSpace, menuOpen }) {
+export function useKeyboard({ onLeft, onRight, onSpace, onEnter, menuOpen }) {
   useEffect(() => {
     const handleKeyDown = (event) => {
       // Ignore if user is typing in an input/textarea
@@ -25,7 +26,7 @@ export function useKeyboard({ onLeft, onRight, onSpace, menuOpen }) {
       }
 
       // Prevent default behavior for our handled keys
-      if (['ArrowLeft', 'ArrowRight', ' '].includes(event.key)) {
+      if (['ArrowLeft', 'ArrowRight', ' ', 'Enter'].includes(event.key)) {
         event.preventDefault();
         event.stopPropagation();
       }
@@ -40,6 +41,9 @@ export function useKeyboard({ onLeft, onRight, onSpace, menuOpen }) {
         case ' ':
           if (onSpace) onSpace();
           break;
+        case 'Enter':
+          if (onEnter) onEnter();
+          break;
         default:
           break;
       }
@@ -51,5 +55,5 @@ export function useKeyboard({ onLeft, onRight, onSpace, menuOpen }) {
     return () => {
       window.removeEventListener('keydown', handleKeyDown, true);
     };
-  }, [onLeft, onRight, onSpace, menuOpen]);
+  }, [onLeft, onRight, onSpace, onEnter, menuOpen]);
 }
