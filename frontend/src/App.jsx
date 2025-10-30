@@ -19,11 +19,11 @@ function App() {
 
   useEffect(() => {
     if (currentChannel) {
-      loadNextVideo();
+      loadNextVideo({ reason: 'channel-change' });
     }
   }, [currentChannel]);
 
-  const loadNextVideo = async () => {
+  const loadNextVideo = async ({ markCurrentAsPlayed = false, reason = 'load' } = {}) => {
     if (!currentChannel) {
       return;
     }
@@ -31,43 +31,65 @@ function App() {
     setLoading(true);
     setError(null);
 
+    const shouldMarkCurrent = markCurrentAsPlayed && currentVideo?.id;
+    let nextVideo;
+    let errorMessage = null;
+
     try {
-      const video = await getNextVideo(currentChannel.id);
-      setCurrentVideo(video);
+      if (shouldMarkCurrent) {
+        console.log(`Advancing video after ${reason}:`, {
+          videoId: currentVideo.id,
+          channelId: currentChannel.id,
+        });
+        nextVideo = await skipVideo(currentChannel.id, currentVideo.id);
+      } else {
+        nextVideo = await getNextVideo(currentChannel.id);
+      }
     } catch (err) {
-      console.error('Failed to load next video:', err);
-      setError(err.message);
+      console.error(
+        `Failed to ${shouldMarkCurrent ? `advance video after ${reason}` : 'load next video'}:`,
+        err
+      );
+
+      if (shouldMarkCurrent) {
+        try {
+          nextVideo = await getNextVideo(currentChannel.id);
+        } catch (fallbackErr) {
+          console.error('Fallback load also failed:', fallbackErr);
+          errorMessage = fallbackErr?.message || 'Unable to load next video';
+        }
+      } else {
+        errorMessage = err?.message || 'Unable to load next video';
+      }
     } finally {
+      if (nextVideo !== undefined) {
+        setCurrentVideo(nextVideo);
+        setError(null);
+      } else if (errorMessage) {
+        setError(errorMessage);
+      }
       setLoading(false);
     }
   };
 
-  const handleSkip = async () => {
+  const handleSkip = () => {
     if (!currentChannel || !currentVideo) {
       console.log('Cannot skip: missing channel or video', { currentChannel, currentVideo });
       return;
     }
-
-    console.log('Skipping video:', currentVideo.id, 'on channel:', currentChannel.id);
-    setLoading(true);
-    setError(null);
-
-    try {
-      const nextVideo = await skipVideo(currentChannel.id, currentVideo.id);
-      console.log('Next video received:', nextVideo);
-      setCurrentVideo(nextVideo);
-    } catch (err) {
-      console.error('Failed to skip video:', err);
-      setError(err.message);
-      loadNextVideo();
-    } finally {
-      setLoading(false);
+    if (loading) {
+      console.log('Skip ignored: already loading next video');
+      return;
     }
+    loadNextVideo({ markCurrentAsPlayed: true, reason: 'skip' });
   };
 
   const handleVideoEnd = () => {
-    console.log('Video ended, loading next...');
-    loadNextVideo();
+    if (loading) {
+      return;
+    }
+    console.log('Video ended, advancing to next...');
+    loadNextVideo({ markCurrentAsPlayed: true, reason: 'complete' });
   };
 
   const handleChannelSelect = (channel) => {
