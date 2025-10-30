@@ -113,6 +113,18 @@
   width: 100%;
 }
 
+.channel-settings {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.channel-settings select {
+  width: 100%;
+}
+
 .source-form {
   background: var(--bg-primary);
   border: 1px solid var(--border);

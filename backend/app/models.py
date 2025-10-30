@@ -10,6 +10,7 @@ class Channel(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    play_order = Column(String, nullable=False, default="random")
 
     # Relationships
     sources = relationship("Source", back_populates="channel", cascade="all, delete-orphan")
@@ -44,6 +45,7 @@ class VideoQueue(Base):
     position = Column(Integer, nullable=False)  # Position in queue (0-indexed)
     played = Column(Boolean, default=False)
     added_at = Column(DateTime, default=datetime.utcnow)
+    published_at = Column(DateTime, nullable=True)
 
     # Relationships
     channel = relationship("Channel", back_populates="videos")

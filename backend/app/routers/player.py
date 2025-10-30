@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from datetime import datetime
 
 from app.database import get_db
 from app.services.queue_builder import QueueBuilder
@@ -16,6 +17,7 @@ class VideoResponse(BaseModel):
     thumbnail_url: str | None
     channel_name: str | None
     position: int
+    published_at: datetime | None
 
     class Config:
         from_attributes = True

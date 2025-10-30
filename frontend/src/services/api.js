@@ -37,17 +37,17 @@ export async function getChannel(channelId) {
   return apiFetch(`/channels/${channelId}`);
 }
 
-export async function createChannel(name) {
+export async function createChannel(name, playOrder = 'random') {
   return apiFetch('/channels/', {
     method: 'POST',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, play_order: playOrder }),
   });
 }
 
-export async function updateChannel(channelId, name) {
+export async function updateChannel(channelId, updates) {
   return apiFetch(`/channels/${channelId}`, {
     method: 'PUT',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(updates),
   });
 }
 

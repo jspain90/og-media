@@ -7,14 +7,34 @@ import {
   createSource,
   deleteSource,
   rebuildQueue,
+  updateChannel,
 } from '../services/api';
 import './ManagementView.css';
+
+const PLAY_ORDER_OPTIONS = [
+  {
+    value: 'random',
+    label: 'Random (shuffle everything)',
+    description: 'Mix videos from all sources randomly.',
+  },
+  {
+    value: 'chronological_newest',
+    label: 'Newest uploads (round robin)',
+    description: "Rotate across sources and pick each source's newest video.",
+  },
+  {
+    value: 'chronological_oldest',
+    label: 'Oldest uploads (round robin)',
+    description: "Rotate across sources and pick each source's oldest video.",
+  },
+];
 
 export function ManagementView({ onClose }) {
   const [channels, setChannels] = useState([]);
   const [selectedChannel, setSelectedChannel] = useState(null);
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   // Forms
   const [newChannelName, setNewChannelName] = useState('');
@@ -38,7 +58,14 @@ export function ManagementView({ onClose }) {
   const loadChannels = async () => {
     try {
       const data = await getChannels();
-      setChannels(data);
+      const sorted = [...data].sort((a, b) => a.name.localeCompare(b.name));
+      setChannels(sorted);
+      if (selectedChannel) {
+        const updated = sorted.find((channel) => channel.id === selectedChannel.id);
+        if (updated) {
+          setSelectedChannel(updated);
+        }
+      }
     } catch (error) {
       console.error('Failed to load channels:', error);
     }
@@ -123,6 +150,33 @@ export function ManagementView({ onClose }) {
       alert('Failed to rebuild queue: ' + error.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePlayOrderChange = async (event) => {
+    if (!selectedChannel) return;
+
+    const newOrder = event.target.value;
+    if (newOrder === selectedChannel.play_order) {
+      return;
+    }
+
+    setSavingSettings(true);
+    try {
+      const updated = await updateChannel(selectedChannel.id, {
+        play_order: newOrder,
+      });
+
+      const nextChannels = [...channels]
+        .map((channel) => (channel.id === updated.id ? updated : channel))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      setChannels(nextChannels);
+      setSelectedChannel(updated);
+    } catch (error) {
+      alert('Failed to update channel: ' + error.message);
+    } finally {
+      setSavingSettings(false);
     }
   };
 
@@ -269,6 +323,34 @@ export function ManagementView({ onClose }) {
                 </form>
               )}
 
+              <div className="channel-settings">
+                <div className="form-row">
+                  <label htmlFor="play-order-select">
+                    Playback order
+                  </label>
+                  <select
+                    id="play-order-select"
+                    value={selectedChannel.play_order}
+                    onChange={handlePlayOrderChange}
+                    disabled={savingSettings}
+                  >
+                    {PLAY_ORDER_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-row">
+                  <small className="form-hint">
+                    {PLAY_ORDER_OPTIONS.find(
+                      (option) => option.value === selectedChannel.play_order
+                    )?.description || 'Choose how this channel queues videos.'}{' '}
+                    The queue is automatically rebuilt after changing playback order.
+                  </small>
+                </div>
+              </div>
+
               <div className="source-list">
                 {sources.length === 0 ? (
                   <div className="empty-state">
@@ -307,3 +389,6 @@ export function ManagementView({ onClose }) {
     </div>
   );
 }
+
+
+

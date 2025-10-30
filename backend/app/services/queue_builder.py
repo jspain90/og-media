@@ -2,7 +2,8 @@ from sqlalchemy.orm import Session
 from app.models import Channel, Source, VideoQueue
 from app.services.youtube import youtube_service
 import random
-from typing import List, Dict
+from typing import List, Dict, Optional
+from datetime import datetime, timezone
 
 class QueueBuilder:
     """Service for building and managing video queues for channels"""
@@ -13,7 +14,7 @@ class QueueBuilder:
     def rebuild_channel_queue(self, channel_id: int) -> int:
         """
         Rebuild the video queue for a channel by fetching from all its sources
-        and randomizing the order.
+        and ordering them according to the channel's playback settings.
 
         Args:
             channel_id: The channel ID to rebuild queue for
@@ -33,8 +34,8 @@ class QueueBuilder:
             print(f"No sources found for channel {channel_id}")
             return 0
 
-        # Collect all videos from all sources
-        all_videos = []
+        # Collect videos per source
+        videos_by_source: List[List[Dict]] = []
 
         for source in sources:
             try:
@@ -45,29 +46,41 @@ class QueueBuilder:
                 else:
                     continue
 
-                all_videos.extend(videos)
+                if videos:
+                    videos_by_source.append(videos)
                 print(f"Fetched {len(videos)} videos from {source.source_type} {source.youtube_id}")
 
             except Exception as e:
                 print(f"Error fetching videos from source {source.id}: {e}")
                 continue
 
-        if not all_videos:
+        if not videos_by_source:
             print(f"No videos fetched for channel {channel_id}")
             return 0
 
-        # Remove duplicates (same video_id)
-        unique_videos = {v['video_id']: v for v in all_videos}
-        all_videos = list(unique_videos.values())
+        play_order = getattr(channel, "play_order", "random") or "random"
+        if play_order not in {"random", "chronological_newest", "chronological_oldest"}:
+            play_order = "random"
+        if play_order == "random":
+            collected: List[Dict] = []
+            for video_list in videos_by_source:
+                collected.extend(video_list)
+            random.shuffle(collected)
+            ordered_videos = self._dedupe_preserve_order(collected)
+        else:
+            newest_first = play_order == "chronological_newest"
+            ordered_videos = self._build_round_robin_by_date(videos_by_source, newest_first)
 
-        # Randomize the order
-        random.shuffle(all_videos)
+        if not ordered_videos:
+            print(f"No videos available after ordering for channel {channel_id}")
+            return 0
 
         # Clear existing queue for this channel
         self.db.query(VideoQueue).filter(VideoQueue.channel_id == channel_id).delete()
 
         # Add videos to queue
-        for position, video in enumerate(all_videos):
+        for position, video in enumerate(ordered_videos):
+            published_at = self._parse_published_at(video.get('published_at'))
             queue_item = VideoQueue(
                 channel_id=channel_id,
                 video_id=video['video_id'],
@@ -75,14 +88,88 @@ class QueueBuilder:
                 title=video['title'],
                 thumbnail_url=video['thumbnail_url'],
                 channel_name=video['channel_name'],
+                published_at=published_at,
                 position=position,
                 played=False
             )
             self.db.add(queue_item)
 
         self.db.commit()
-        print(f"Added {len(all_videos)} videos to queue for channel {channel_id}")
-        return len(all_videos)
+        print(f"Added {len(ordered_videos)} videos to queue for channel {channel_id}")
+        return len(ordered_videos)
+
+    def _dedupe_preserve_order(self, videos: List[Dict]) -> List[Dict]:
+        """Remove duplicate video IDs while preserving order"""
+        seen = set()
+        unique: List[Dict] = []
+        for video in videos:
+            video_id = video.get("video_id")
+            if not video_id or video_id in seen:
+                continue
+            seen.add(video_id)
+            unique.append(video)
+        return unique
+
+    def _build_round_robin_by_date(self, videos_by_source: List[List[Dict]], newest_first: bool) -> List[Dict]:
+        """Interleave sources while respecting upload chronology per source"""
+        ordered_sources: List[List[Dict]] = []
+        for videos in videos_by_source:
+            if not videos:
+                continue
+            ordered = sorted(
+                videos,
+                key=lambda v: self._sort_key_for_date(v.get("published_at"), newest_first),
+                reverse=newest_first,
+            )
+            ordered_sources.append(ordered)
+
+        result: List[Dict] = []
+        seen = set()
+
+        while True:
+            active_indexes = [idx for idx, items in enumerate(ordered_sources) if items]
+            if not active_indexes:
+                break
+
+            random.shuffle(active_indexes)
+            progress = False
+
+            for idx in active_indexes:
+                queue = ordered_sources[idx]
+                while queue:
+                    video = queue.pop(0)
+                    video_id = video.get("video_id")
+                    if not video_id or video_id in seen:
+                        continue
+                    seen.add(video_id)
+                    result.append(video)
+                    progress = True
+                    break
+
+            if not progress:
+                break
+
+        return result
+
+    def _parse_published_at(self, value: Optional[str]) -> Optional[datetime]:
+        """Convert ISO 8601 timestamp string to naive UTC datetime"""
+        if not value:
+            return None
+        try:
+            normalized = value.replace('Z', '+00:00')
+            parsed = datetime.fromisoformat(normalized)
+            if parsed.tzinfo is not None:
+                return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+            return parsed
+        except Exception:
+            return None
+
+    def _sort_key_for_date(self, value: Optional[str], newest_first: bool) -> datetime:
+        """Provide a stable sort key for published_at values"""
+        parsed = self._parse_published_at(value)
+        if parsed:
+            return parsed
+        return datetime.min if newest_first else datetime.max
 
     def rebuild_all_queues(self) -> Dict[int, int]:
         """
@@ -146,3 +233,4 @@ class QueueBuilder:
             'played': played,
             'remaining': total - played
         }
+
